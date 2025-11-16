@@ -11,7 +11,7 @@ def show_page():
     ### Teknologi yang Digunakan
     * **Framework:** Streamlit
     * **API Resep:** Spoonacular
-    * **Penerjemah:** deep-translator (via Google Translate)
+    * **Penerjemah:** DeepL
     """)
     st.markdown("---")
    
