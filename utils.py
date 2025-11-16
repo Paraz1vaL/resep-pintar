@@ -12,7 +12,6 @@ SPOONACULAR_URL_SEARCH = "https://api.spoonacular.com/recipes/findByIngredients"
 SPOONACULAR_URL_DETAIL_TEMPLATE = "https://api.spoonacular.com/recipes/{id}/information"
 
 # --- Inisialisasi Penerjemah ---
-# <-- PERUBAHAN BESAR DI BLOK INI -->
 translator = None
 if DEEPL_API_KEY:
     try:
@@ -20,7 +19,7 @@ if DEEPL_API_KEY:
         # KITA TAMBAHKAN 'server_url' UNTUK API GRATIS
         translator = deepl.Translator(
             DEEPL_API_KEY,
-            server_url="https://api-free.deepl.com" # <-- INI SOLUSINYA
+            server_url="https://api-free.deepl.com" # <-- INI PENTING
         )
         
         # Kita tes otentikasi sekali saat startup
@@ -132,11 +131,14 @@ def get_recipe_detail_api(recipe_id):
         else:
             langkah_en_list = ["Langkah detail tidak tersedia, silakan cek URL sumber."]
 
-        # --- Solusi Cepat: Hanya terjemahkan Judul dan Bahan ---
-        num_bahan = len(bahan_en_list)
-        all_texts_to_translate = [nama_en] + bahan_en_list
+        # --- PERUBAHAN DIMULAI DI SINI ---
         
-        print(f"Menerjemahkan {len(all_texts_to_translate)} teks (Judul+Bahan) via DeepL...")
+        # 2. Kumpulkan SEMUA teks (Judul, Bahan, DAN Langkah)
+        num_bahan = len(bahan_en_list)
+        # KITA TAMBAHKAN 'langkah_en_list' KE DALAM BATCH
+        all_texts_to_translate = [nama_en] + bahan_en_list + langkah_en_list
+        
+        print(f"Menerjemahkan {len(all_texts_to_translate)} teks (Semua) via DeepL...")
         
         results = translator.translate_text(
             all_texts_to_translate, 
@@ -149,11 +151,14 @@ def get_recipe_detail_api(recipe_id):
 
         if not translated_texts: raise Exception("Terjemahan batch DeepL gagal.")
 
-        # 4. Pisahkan kembali
+        # 4. Pisahkan kembali hasil terjemahannya
         nama_id = translated_texts[0]
         bahan_id_list = translated_texts[1 : 1 + num_bahan]
-        langkah_id_list = langkah_en_list # Kita tetap pakai langkah dalam Bahasa Inggris
+        # KITA AMBIL SISA LIST SEBAGAI LANGKAH YANG SUDAH DITERJEMAHKAN
+        langkah_id_list = translated_texts[1 + num_bahan :]
         
+        # --- PERUBAHAN SELESAI ---
+
         # 5. Kembalikan data
         return {"nama": nama_id, "url": url_en, "bahan": bahan_id_list, "langkah": langkah_id_list}
         
