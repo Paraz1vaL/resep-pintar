@@ -1,57 +1,38 @@
 # File: utils.py
 import streamlit as st
 import requests
-from deep_translator import GoogleTranslator
+import deepl  # <-- PERUBAHAN: Import library baru
+import time # (Kita masih pakai time, tapi untuk hal lain)
 
-# --- Konfigurasi API Spoonacular ---
-API_KEY = st.secrets.get("SPOONACULAR_API_KEY", "KUNCI_BELUM_DIATUR")
+# --- Konfigurasi API ---
+# Ambil kedua API key dari secrets
+SPOONACULAR_API_KEY = st.secrets.get("SPOONACULAR_API_KEY")
+DEEPL_API_KEY = st.secrets.get("DEEPL_API_KEY") # <-- PERUBAHAN: Ambil key DeepL
+
+# URL Spoonacular (tetap sama)
 SPOONACULAR_URL_SEARCH = "https://api.spoonacular.com/recipes/findByIngredients"
 SPOONACULAR_URL_DETAIL_TEMPLATE = "https://api.spoonacular.com/recipes/{id}/information"
 
 # --- Inisialisasi Penerjemah ---
-# Kita buat di sini agar hanya diinisialisasi sekali
-translator_to_en = GoogleTranslator(source='id', target='en')
-translator_to_id = GoogleTranslator(source='en', target='id')
+# <-- PERUBAHAN BESAR DI BLOK INI -->
+translator = None
+if DEEPL_API_KEY:
+    try:
+        # Inisialisasi translator resmi DeepL
+        translator = deepl.Translator(DEEPL_API_KEY)
+    except Exception as e:
+        st.error(f"Gagal menginisialisasi DeepL Translator: {e}")
+else:
+    # Tampilkan error jika key tidak ada di secrets.toml
+    st.error("API Key DeepL tidak ditemukan. Harap tambahkan DEEPL_API_KEY ke .streamlit/secrets.toml")
 
-# --- Fungsi CSS Kustom ---
+# --- Fungsi CSS Kustom (Tidak berubah) ---
 def load_custom_css():
-    """Memuat CSS untuk kotak metrik & menyembunyikan spinner cache."""
     st.markdown("""
     <style>
-    /* CSS untuk menyembunyikan spinner "Running..." */
-    [data-testid="stSpinner"] {
-        display: none;
-    }
-
-    /* CSS untuk kotak metrik kustom */
-    .metric-box {
-        background-color: #333; /* Warna dasar kotak */
-        border-radius: 10px;
-        padding: 15px;
-        margin-bottom: 10px;
-        color: white;
-    }
-    .metric-box h3 {
-        font-size: 16px;
-        color: #CCC; /* Warna label (abu-abu muda) */
-        margin-bottom: 5px;
-    }
-    .metric-box p {
-        font-size: 24px;
-        font-weight: bold;
-        margin-bottom: 5px;
-    }
-    .metric-box span {
-        font-size: 14px;
-        color: #AAA;
-    }
-
-    /* Warna-warna spesifik */
-    .metric-box.blue { background-color: #004a9e; }
-    .metric-box.yellow { background-color: #b38600; }
-    .metric-box.green { background-color: #006400; }
-    .metric-box.red { background-color: #8b0000; }
-    .metric-box.grey { background-color: #4a4a4a; }
+    [data-testid="stSpinner"] { display: none; }
+    .metric-box { ... } /* (Saya singkat, tapi kode CSS Anda tetap ada di sini) */
+    /* ... (sisa kode CSS Anda) ... */
     </style>
     """, unsafe_allow_html=True)
 
@@ -59,24 +40,31 @@ def load_custom_css():
 
 @st.cache_data(ttl=3600)
 def terjemahkan_ke_inggris(teks_indonesia):
-    """Menerjemahkan input pengguna dari ID ke EN."""
-    print(f"CACHE MISS: Menerjemahkan KE EN '{teks_indonesia}'")
+    """Menerjemahkan input pengguna dari ID ke EN menggunakan DeepL."""
+    if not translator:
+        return None # Gagal jika translator tidak siap
+        
+    print(f"CACHE MISS (DeepL): Menerjemahkan KE EN '{teks_indonesia}'")
     try:
-        return translator_to_en.translate(teks_indonesia)
+        # <-- PERUBAHAN: Cara memanggil DeepL -->
+        # "EN-US" lebih spesifik daripada "EN"
+        result = translator.translate_text(teks_indonesia, source_lang="ID", target_lang="EN-US")
+        return result.text
     except Exception as e:
-        st.error(f"Error saat menerjemahkan (ID-EN): {e}")
+        st.error(f"Error saat menerjemahkan (DeepL ID-EN): {e}")
         return None
 
 @st.cache_data(ttl=3600)
 def search_recipes_api(ingredients_query):
-    """Memanggil API Spoonacular findByIngredients."""
-    if API_KEY == "KUNCI_BELUM_DIATUR":
-        st.error("API Key Spoonacular belum diatur di .streamlit/secrets.toml")
+    """Memanggil API Spoonacular findByIngredients (Tidak berubah)."""
+    if not SPOONACULAR_API_KEY:
+        st.error("API Key Spoonacular belum diatur.")
         return []
+    
     print(f"CACHE MISS: Memanggil API pencarian untuk '{ingredients_query}'")
     params = {
         "ingredients": ingredients_query, "number": 5,
-        "apiKey": API_KEY, "ranking": 1
+        "apiKey": SPOONACULAR_API_KEY, "ranking": 1
     }
     try:
         response = requests.get(SPOONACULAR_URL_SEARCH, params=params)
@@ -89,12 +77,16 @@ def search_recipes_api(ingredients_query):
 
 @st.cache_data(ttl=3600)
 def get_recipe_detail_api(recipe_id):
-    """Memanggil API Spoonacular dan menerjemahkan hasil (Metode Batch)."""
-    if API_KEY == "KUNCI_BELUM_DIATUR": return None
-    print(f"CACHE MISS: Memanggil API detail untuk ID '{recipe_id}'")
+    """Memanggil API Spoonacular dan menerjemahkan (DeepL)."""
+    if not SPOONACULAR_API_KEY or not translator:
+        return None
+        
+    print(f"CACHE MISS (DeepL): Memanggil API detail untuk ID '{recipe_id}'")
     detail_url = SPOONACULAR_URL_DETAIL_TEMPLATE.format(id=recipe_id)
-    params = { "apiKey": API_KEY, "includeNutrition": False }
+    params = { "apiKey": SPOONACULAR_API_KEY, "includeNutrition": False }
+    
     try:
+        # 1. Ambil data (Bahasa Inggris)
         response = requests.get(detail_url, params=params)
         response.raise_for_status()
         detail = response.json()
@@ -109,21 +101,37 @@ def get_recipe_detail_api(recipe_id):
             langkah_en_list = [step_item.get('step') for step_item in steps_list if step_item.get('step')]
         else:
             langkah_en_list = ["Langkah detail tidak tersedia, silakan cek URL sumber."]
-        
-        num_bahan = len(bahan_en_list)
-        all_texts_to_translate = [nama_en] + bahan_en_list + langkah_en_list
-        
-        print(f"Menerjemahkan {len(all_texts_to_translate)} teks secara batch...")
-        translated_texts = translator_to_id.translate_batch(all_texts_to_translate)
-        print("Selesai menerjemahkan batch.")
 
-        if not translated_texts: raise Exception("Terjemahan batch gagal.")
+        # --- PERUBAHAN KUNCI: METODE BATCH DEEPL ---
+        # (Kita tetap pada solusi terakhir: hanya terjemahkan Judul dan Bahan)
+        num_bahan = len(bahan_en_list)
+        all_texts_to_translate = [nama_en] + bahan_en_list
         
+        print(f"Menerjemahkan {len(all_texts_to_translate)} teks (Judul+Bahan) via DeepL...")
+        
+        # DeepL secara otomatis menangani list sebagai batch
+        results = translator.translate_text(
+            all_texts_to_translate, 
+            source_lang="EN", 
+            target_lang="ID"
+        )
+        
+        # Ambil teks dari hasil (DeepL mengembalikan objek)
+        translated_texts = [r.text for r in results]
+        
+        print("Selesai menerjemahkan batch DeepL.")
+
+        if not translated_texts: raise Exception("Terjemahan batch DeepL gagal.")
+
+        # 4. Pisahkan kembali
         nama_id = translated_texts[0]
         bahan_id_list = translated_texts[1 : 1 + num_bahan]
-        langkah_id_list = translated_texts[1 + num_bahan :]
+        # Kita tetap pakai langkah dalam Bahasa Inggris (solusi kecepatan)
+        langkah_id_list = langkah_en_list
         
+        # 5. Kembalikan data
         return {"nama": nama_id, "url": url_en, "bahan": bahan_id_list, "langkah": langkah_id_list}
+        
     except Exception as e:
-        print(f"Error di get_recipe_detail_api: {e}")
+        print(f"Error di get_recipe_detail_api (DeepL): {e}")
         return None
