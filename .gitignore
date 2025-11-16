@@ -1,0 +1,9 @@
+# Folder Virtual Environment
+venv/
+
+# File rahasia Streamlit
+.streamlit/secrets.toml
+
+# File cache Python
+__pycache__/
+*.pyc
